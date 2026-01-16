@@ -1,0 +1,1523 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>RTB Arb Staffing & Wait-Time Simulator</title>
+<style>
+  :root{
+    --bg:#0b111e; --bg2:#0d1428; --card:#121a2b; --ink:#e9eef9; --muted:#9fb0ce;
+    --accent:#7aa2ff; --line:#223055; --danger:#ff6b6b; --ok:#39d353; --warn:#ffd166;
+    --chip:#0f1a30; --input:#0f1830;
+  }
+  html,body{height:100%}
+  body{margin:0; font:15px/1.5 system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif; color:var(--ink);
+       background:radial-gradient(1200px 500px at 20% -10%, #102040 0%, transparent 60%), linear-gradient(180deg,#0a0f1c,#0d1428 60%,#0a0f1c)}
+  .wrap{max-width:1280px; margin:28px auto; padding:0 18px 80px}
+  h1{font-size:1.6rem; margin:0 0 4px}
+  .sub{color:var(--muted); margin:0 0 16px}
+
+  .bar{position:sticky; top:0; z-index:50; backdrop-filter:blur(8px);
+       background:linear-gradient(180deg,rgba(13,20,40,.92),rgba(13,20,40,.75));
+       border-bottom:1px solid var(--line);}
+  .bar .inner{max-width:1280px; margin:0 auto; padding:10px 18px; display:flex; gap:10px; align-items:center}
+  .sp{flex:1}
+  .chip{display:inline-flex; align-items:center; gap:6px; padding:6px 10px; background:var(--chip); border:1px solid var(--line); border-radius:999px; color:var(--muted); font-size:12px}
+
+  .grid{display:grid; grid-template-columns:repeat(12,1fr); gap:14px}
+  .card{background:var(--card); border:1px solid var(--line); border-radius:16px; padding:16px; box-shadow:0 12px 28px rgba(0,0,0,.25)}
+  .card h3{margin:0 0 12px; font-size:1.05rem}
+  .span-12{grid-column:span 12}
+  .span-8{grid-column:span 8}
+  .span-6{grid-column:span 6}
+  .span-4{grid-column:span 4}
+  .span-3{grid-column:span 3}
+
+  .row{display:grid; grid-template-columns:repeat(12,1fr); gap:10px}
+  .two-col{display:grid; grid-template-columns:1fr 1fr; gap:12px}
+  /* Ensure two-col children don’t force overflow */
+  .two-col > div{min-width:0;}
+  .four-col{display:grid; grid-template-columns:repeat(4,1fr); gap:8px}
+  /* Ensure grid items do not exceed their column width */
+  .four-col > div{min-width:0;}
+  /* Six‑column grid used for priority allocation ranges */
+  .six-col{display:grid; grid-template-columns:repeat(6,1fr); gap:8px}
+  .six-col > div{min-width:0;}
+
+  label{font-size:12px; color:var(--muted); margin-bottom:6px; display:block}
+  input[type="number"], input[type="file"], select{
+    width:100%; box-sizing:border-box; padding:10px 12px; border-radius:10px; border:1px solid var(--line); background:var(--input); color:var(--ink);
+  }
+  input[type="checkbox"]{transform:scale(1.1)}
+  button{border:1px solid var(--line); background:var(--input); color:var(--ink); padding:10px 12px; border-radius:10px; cursor:pointer}
+  button.primary{background:var(--accent); color:#08132b; border-color:#a9c1ff; font-weight:700}
+  button.ghost{background:transparent}
+  button:disabled{opacity:.6; cursor:not-allowed}
+
+  .pill{display:inline-block; padding:2px 8px; border-radius:999px; font-size:0.8rem; border:1px solid var(--line); color:var(--muted)}
+  .pill.ok{background:rgba(57,211,83,.15); border-color:#2a8040; color:#9ef3b4}
+  .pill.warn{background:rgba(255,209,102,.12); border-color:#7b6733; color:#ffd166}
+  .pill.bad{background:rgba(255,107,107,.12); border-color:#7b3333; color:#ff8b8b}
+
+  .note{font-size:0.92rem; color:var(--muted)}
+  .warn{color:var(--warn)}
+
+  table{width:100%; border-collapse:collapse; font-size:12px}
+  th,td{padding:8px; border-bottom:1px dashed var(--line); text-align:center; color:var(--ink)}
+  th:first-child, td:first-child{text-align:left}
+  .scroll{max-height:340px; overflow:auto; background:#0b1324; border:1px solid var(--line); border-radius:12px}
+
+  canvas{width:100%; height:320px; background:#0b1324; border:1px solid var(--line); border-radius:12px}
+  .b-em{border:2px solid #ff6b6b; border-radius:12px; padding:6px}
+  .b-st{border:2px solid #39d353; border-radius:12px; padding:6px}
+  .b-mo{border:2px solid #64b5f6; border-radius:12px; padding:6px}
+
+  details.audit summary{cursor:pointer; color:#cfe0ff}
+  .kv{display:grid; grid-template-columns:220px 1fr; gap:8px; row-gap:6px; font-size:13px}
+  .kv div:nth-child(odd){color:var(--muted)}
+
+  @media (max-width: 1100px){
+    .span-8{grid-column:span 12}
+    .span-6{grid-column:span 12}
+    .span-4{grid-column:span 12}
+    .span-3{grid-column:span 12}
+    .two-col{grid-template-columns:1fr}
+    .four-col{grid-template-columns:1fr 1fr}
+  }
+</style>
+</head>
+<body>
+  <div class="bar">
+    <div class="inner">
+      <div class="chip">RTB Arb Staffing & Wait-Time Simulator</div>
+      <span class="sp"></span>
+      <button id="btnLoadTop">Upload CSV</button>
+      <button id="btnValidate" class="ghost">Validate</button>
+      <button id="btnRunTop" class="primary" disabled>Run Forecast</button>
+      <button id="btnDownloadTop" disabled>Download CSV</button>
+      <!-- Navigation buttons to switch between views -->
+      <button id="btnSettingsTop" class="ghost">Settings</button>
+      <button id="btnForecastTop" class="ghost">Forecast</button>
+      <button id="btnInfoTop" class="ghost">Information</button>
+    </div>
+  </div>
+
+  <div class="wrap">
+    <h1>RTB Arb Staffing & Wait-Time Simulator</h1>
+    <!-- Subheading removed per user request -->
+
+    <!-- Removed the secondary settings/forecast toggle row; the view toggles are now in the top bar -->
+
+    <!-- Settings view -->
+    <div id="settingsView">
+      <div class="grid">
+        <!-- Column Mapping -->
+        <div class="card span-12">
+          <h3>Column Mapping</h3>
+          <div class="note">Use the <strong>Upload CSV</strong> button in the top bar to load a CSV. Adjust the mapping below only if needed.</div>
+          <span id="loadStatus" class="pill" style="margin-top:6px; display:inline-block">No file</span>
+          <div id="mapWrap" style="margin-top:12px; display:none">
+            <div class="note" style="margin-bottom:8px">Auto‑detected headers are pre‑selected. Modify any field below if your columns differ.</div>
+            <div class="two-col" id="mappingForm"></div>
+            <div style="margin-top:10px; display:flex; gap:8px; align-items:center">
+              <button id="btnApplyMap">Apply Mapping</button>
+              <span id="mapMsg" class="pill ok" style="display:none">Mapping applied</span>
+            </div>
+            <div id="diag" class="note" style="margin-top:8px"></div>
+          </div>
+        </div>
+
+        <!-- Productivity -->
+        <div class="card span-6">
+          <h3>Productivity Weights (per head)</h3>
+          <div class="four-col">
+            <div><label>FT Employee</label><input id="wtFTEmp" type="number" step="0.05" value="1.00"/></div>
+            <div><label>PT Employee</label><input id="wtPTEmp" type="number" step="0.05" value="0.60"/></div>
+            <div><label>FT Contractor</label><input id="wtFTCtr" type="number" step="0.05" value="0.90"/></div>
+            <div><label>PT Contractor</label><input id="wtPTCtr" type="number" step="0.05" value="0.50"/></div>
+          </div>
+          <div class="note" style="margin-top:8px">These multiply effective heads to derive capacity/month using learned capacity-per-head.</div>
+        </div>
+
+        <!-- Ramp up -->
+        <div class="card span-6">
+          <h3>Ramp-Up Curve (new hires)</h3>
+          <div class="four-col">
+            <div><label>Month 0</label><input id="r0" type="number" step="0.05" value="0.70"/></div>
+            <div><label>Month 1</label><input id="r1" type="number" step="0.05" value="0.90"/></div>
+            <div><label>Month 2</label><input id="r2" type="number" step="0.05" value="0.95"/></div>
+            <div><label>Month 3+</label><input id="r3" type="number" step="0.05" value="1.00"/></div>
+          </div>
+        </div>
+
+        <!-- Model & Controls (moved from Forecast) -->
+        <div class="card span-12">
+          <h3>Model &amp; Controls</h3>
+          <div class="two-col">
+            <div>
+              <label>Demand growth per month (%)</label>
+              <input id="inpGrowthPct" type="number" step="0.1" value="0" />
+            </div>
+            <div>
+              <label>Min wait floor (weeks)</label>
+              <!-- Default floor raised to 1.6 weeks as requested -->
+              <input id="inpMinWait" type="number" step="0.1" value="1.6" />
+            </div>
+            <div>
+              <label>Baseline months for averages</label>
+              <input id="inpBaseline" type="number" step="1" value="6" />
+            </div>
+            <div>
+              <label>Regression months (blank = all)</label>
+              <input id="inpRegMonths" type="number" step="1" placeholder="" />
+            </div>
+            <div>
+              <label>Allocation method</label>
+              <select id="allocationMethod">
+                <option value="requests">Requests Ratio (historic)</option>
+                <option value="backlog" selected>Backlog Ratio (dynamic)</option>
+              </select>
+            </div>
+          </div>
+          <div style="margin-top:14px;">
+            <!-- Attrition can be enabled by user; unchecked by default -->
+            <label><input id="useAttr" type="checkbox" /> Enable attrition %</label>
+            <!-- Arrange the four attrition fields in a 4‑column grid to avoid overlap -->
+            <div class="four-col" style="margin-top:6px">
+              <div><label>FT Emp %</label><input id="attrFTE" type="number" step="0.1" value="0"/></div>
+              <div><label>PT Emp %</label><input id="attrPTE" type="number" step="0.1" value="0"/></div>
+              <div><label>FT Ctr %</label><input id="attrFTC" type="number" step="0.1" value="0"/></div>
+              <div><label>PT Ctr %</label><input id="attrPTC" type="number" step="0.1" value="0"/></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Priority Allocation Ranges -->
+        <div class="card span-12">
+          <h3>Priority Allocation Ranges (%)</h3>
+          <!-- Six columns: E min/max, S min/max, M min/max. Disabled by default; enable via the custom range checkbox. -->
+          <div class="six-col">
+            <div>
+              <label>E Min %</label><input id="rngEmin" type="number" step="0.1" value="2" disabled />
+            </div>
+            <div>
+              <label>E Max %</label><input id="rngEmax" type="number" step="0.1" value="5" disabled />
+            </div>
+            <div>
+              <label>S Min %</label><input id="rngSmin" type="number" step="0.1" value="60" disabled />
+            </div>
+            <div>
+              <label>S Max %</label><input id="rngSmax" type="number" step="0.1" value="85" disabled />
+            </div>
+            <div>
+              <label>M Min %</label><input id="rngMmin" type="number" step="0.1" value="30" disabled />
+            </div>
+            <div>
+              <label>M Max %</label><input id="rngMmax" type="number" step="0.1" value="40" disabled />
+            </div>
+          </div>
+          <div class="note" style="margin-top:8px">Specify the minimum and maximum allocation percentages for Emergency (E), Standard (S), and Monetary (M) hearings. These values are used to clamp the dynamic allocation during forecasting.</div>
+          <div style="margin-top:8px">
+            <label><input id="useCustomRange" type="checkbox" /> Enable custom priority ranges</label>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Forecast view -->
+    <div id="forecastView" style="display:none">
+      <div class="grid">
+        <!-- Model & Controls are moved to Settings view; removed from forecast view -->
+
+        <!-- Staffing plan -->
+        <div class="card span-12">
+          <h3>Staffing Plan (12 months) — Δ changes vs last observed</h3>
+          <div class="note">Enter positive values to hire, negative to reduce. Attrition % (if enabled) applies each month to prior headcount before deltas.</div>
+          <div id="staffingPlan"></div>
+        </div>
+
+        <!-- Charts -->
+        <div class="card span-12">
+          <h3>Forecasted Wait Times (next 12 months)</h3>
+          <div class="grid">
+            <div class="span-4"><div class="b-em"><strong>Emergency</strong><canvas id="chartEm"></canvas></div></div>
+            <div class="span-4"><div class="b-st"><strong>Standard</strong><canvas id="chartSt"></canvas></div></div>
+            <div class="span-4"><div class="b-mo"><strong>Monetary</strong><canvas id="chartMo"></canvas></div></div>
+          </div>
+        </div>
+
+        <!-- Results + Audit -->
+        <div class="card span-12">
+          <div style="display:flex; align-items:center; gap:10px">
+            <h3 style="margin:0">Results</h3>
+            <span class="pill" id="valStatus">Not validated</span>
+            <span class="sp"></span>
+            <button id="btnDownload">Download Results CSV</button>
+          </div>
+          <div id="results" class="scroll" style="margin-top:10px"></div>
+
+          <details class="audit" style="margin-top:12px">
+            <summary>Show calculation audit (first 3 months)</summary>
+            <div id="audit" class="kv" style="margin-top:10px"></div>
+          </details>
+        </div>
+
+        <!-- Validation -->
+        <div class="card span-12">
+          <h3>Validation & Diagnostics</h3>
+          <div id="warnings" class="warn"></div>
+          <div id="diag2" class="note" style="margin-top:8px"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+<!-- Hidden file input for CSV ingestion; triggered by top bar -->
+<input id="file" type="file" accept=".csv" style="display:none" />
+    
+    <!-- Information view -->
+    <div id="infoView" style="display:none">
+      <!-- Responsive information page using a grid and consistent styling -->
+      <style>
+        /* Scoped styles for the information page. These classes are prefixed to avoid conflicts. */
+        #infoView {
+          background: var(--bg2);
+          color: var(--ink);
+          padding: 24px 32px;
+          min-height: 100%;
+        }
+        #infoView .info-header {
+          margin-bottom: 32px;
+        }
+        #infoView .info-header h1 {
+          font-size: clamp(32px, 3vw, 44px);
+          font-weight: 800;
+          line-height: 1.2;
+          margin: 0;
+        }
+        #infoView .info-header p {
+          font-size: clamp(16px, 2vw, 24px);
+          color: var(--muted);
+          margin: 4px 0 0;
+        }
+        /* Grid for the step cards */
+        #infoView .info-grid {
+          display: grid;
+          grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+          gap: 24px;
+        }
+        #infoView .info-card {
+          background: var(--card);
+          border: 1px solid var(--line);
+          border-radius: 18px;
+          padding: 20px 24px;
+          position: relative;
+        }
+        #infoView .info-badge {
+          position: absolute;
+          top: 16px;
+          left: 16px;
+          width: 40px;
+          height: 40px;
+          border-radius: 50%;
+          background: var(--accent);
+          color: var(--bg2);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          font-weight: 800;
+        }
+        #infoView .info-card h3 {
+          font-size: clamp(18px, 1.6vw, 26px);
+          line-height: 1.3;
+          padding-left: 52px;
+          margin: 0;
+        }
+        #infoView .info-card p {
+          font-size: clamp(14px, 1.3vw, 20px);
+          line-height: 1.5;
+          color: var(--muted);
+          margin: 8px 0 0;
+        }
+        /* Panels grid */
+        #infoView .info-panels {
+          display: grid;
+          grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+          gap: 24px;
+          margin-top: 32px;
+        }
+        #infoView .info-panel {
+          background: var(--card);
+          border: 1px solid var(--line);
+          border-radius: 18px;
+          padding: 20px 24px;
+        }
+        #infoView .info-panel h4 {
+          font-size: clamp(16px, 1.4vw, 22px);
+          font-weight: 800;
+          margin: 0 0 8px;
+        }
+        #infoView .info-panel p {
+          font-size: clamp(14px, 1.2vw, 20px);
+          line-height: 1.5;
+          color: var(--muted);
+          margin: 6px 0;
+        }
+        #infoView .info-panel ul {
+          padding-left: 1.4em;
+          margin: 6px 0;
+          list-style: disc;
+        }
+        #infoView .info-panel li {
+          font-size: clamp(14px, 1.2vw, 20px);
+          color: var(--muted);
+          line-height: 1.5;
+          margin: 4px 0;
+        }
+      </style>
+      <div class="info-header">
+        <h1>How the Wait‑Time Simulator Works — Step by Step</h1>
+        <p>From your spreadsheet → clean mapping → learn from history → simulate each month → charts &amp; checks</p>
+      </div>
+      <!-- Steps -->
+      <div class="info-grid">
+        <div class="info-card">
+          <div class="info-badge">1</div>
+          <h3>Add Your CSV</h3>
+          <p>Pick your monthly spreadsheet (CSV). It should include a month column, how many new cases arrived, and how much work your team can complete.</p>
+        </div>
+        <div class="info-card">
+          <div class="info-badge">2</div>
+          <h3>Match the Columns</h3>
+          <p>Tell the app which headers correspond to which fields (for example: Emergency, Standard, and Monetary requests, capacity, or filled/unfilled Monetary slots).</p>
+        </div>
+        <div class="info-card">
+          <div class="info-badge">3</div>
+          <h3>Build the History</h3>
+          <p>Choose how many recent months to learn from (Baseline). Optionally choose Regression months to fit recent dynamics if things have changed. The app also detects unused Monetary slots to estimate inefficiency.</p>
+        </div>
+        <div class="info-card">
+          <div class="info-badge">4</div>
+          <h3>Choose Settings</h3>
+          <p>Select how capacity is split across Emergency, Standard, and Monetary. Set minimum/maximum bands for each priority and a realistic minimum wait so improvements taper smoothly.</p>
+        </div>
+        <div class="info-card">
+          <div class="info-badge">5</div>
+          <h3>Run the Simulation</h3>
+          <p>For each future month: add new requests, apply capacity, update backlog, and adjust waits. A zero‑capacity month spikes waits only in that month; it does not permanently lock them at infinity.</p>
+        </div>
+        <div class="info-card">
+          <div class="info-badge">6</div>
+          <h3>Read the Results</h3>
+          <p>View charts and summary numbers for waits, backlog, and capacity. Use the validation error (MAE) to tune settings. If conditions changed recently, shorten Regression months.</p>
+        </div>
+      </div>
+      <!-- Panels with additional information -->
+      <div class="info-panels">
+        <div class="info-panel">
+          <h4>What the App Calculates (Plain English)</h4>
+          <p><strong>Capacity split:</strong> Each month’s total capacity is shared across Emergency, Standard, and Monetary using the rules you set.</p>
+          <p><strong>Demand ratio:</strong> If requests are higher than capacity, waits tend to rise; if lower, waits tend to fall.</p>
+          <p><strong>Wait changes:</strong> Improvements slow as you approach the minimum wait, so drops look realistic.</p>
+          <p><strong>Backlog formula:</strong> Next backlog = max(0, backlog + new requests − capacity).</p>
+        </div>
+        <div class="info-panel">
+          <h4>Stability &amp; Safeguards</h4>
+          <p>Your file isn’t changed; the app only reads it for the simulation.</p>
+          <p>Empty data series won’t crash the charts — they’re safely handled.</p>
+          <p>Zero‑capacity months are treated as local shocks, not permanent failures.</p>
+          <p>Unused Monetary slots reduce effective Monetary capacity to better match reality.</p>
+        </div>
+        <div class="info-panel">
+          <h4>Glossary (Short)</h4>
+          <ul>
+            <li><strong>Requests:</strong> New cases arriving in a month.</li>
+            <li><strong>Capacity:</strong> The amount of work your team can complete that month.</li>
+            <li><strong>Backlog:</strong> Unfinished work carried into the next month.</li>
+            <li><strong>Wait:</strong> How long people are expected to wait, by priority.</li>
+            <li><strong>E / S / M:</strong> Emergency, Standard, and Monetary priorities.</li>
+            <li><strong>Baseline months:</strong> How many recent months to use for typical levels.</li>
+            <li><strong>Regression months:</strong> Only the latest N rows used to fit the wait dynamics.</li>
+            <li><strong>MAE:</strong> Mean Absolute Error — smaller is a better fit.</li>
+          </ul>
+        </div>
+        <div class="info-panel">
+          <h4>What Your Data Should Contain</h4>
+          <ul>
+            <li>Month (e.g., 2024‑04).</li>
+            <li>Requests by priority (E, S, M).</li>
+            <li>Capacity / headcount / slots (as available).</li>
+            <li>Monetary filled &amp; unfilled slots (optional, for inefficiency).</li>
+            <li>Any other fields you plan to reference in mapping.</li>
+            <li>No personal or sensitive data.</li>
+          </ul>
+          <p><em>Tip:</em> Keep column headers stable over time so mapping stays consistent.</p>
+        </div>
+        <div class="info-panel">
+          <h4>Validation Tips</h4>
+          <ul>
+            <li>Start with 6–12 Regression months; shorten if conditions recently changed.</li>
+            <li>Compare the model’s historical waits to real waits — lower MAE is better.</li>
+            <li>Don’t force overnight improvements; the minimum wait floor keeps drops realistic.</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+
+<script>
+// Safe helper functions to avoid errors when arrays are empty
+const safeMin = arr => (arr && arr.length ? Math.min(...arr) : 0);
+const safeMax = arr => (arr && arr.length ? Math.max(...arr) : 0);
+
+// Helpers for computing unfilled slot ratios.  Use comma-safe number parsing and column matching.
+function toNumSlots(v){ return (v == null || v === '' ? 0 : +(`${v}`).replace(/,/g,'')); }
+function sumCols(row, matcher){ return Object.keys(row).reduce((s,k)=> s + (matcher(k) ? toNumSlots(row[k]) : 0), 0); }
+function slotMatchers(prio){
+  const p = prio.toLowerCase();
+  const filled = new RegExp(`_filled_slots_${p}$`,'i');
+  const unfilled = new RegExp(`_unfilled_slots_${p}$`,'i');
+  return {
+    isFilled: (name) => filled.test(name),
+    isUnfilled: (name) => unfilled.test(name)
+  };
+}
+
+// Generic ingestion function for loading CSV from file input
+async function ingestSelectedFile(){
+  const fileInput = document.getElementById('file');
+  const f = fileInput && fileInput.files && fileInput.files[0];
+  if(!f){ warn('Choose a CSV file.'); return; }
+  try{
+    const text = await f.text();
+    const parsed = csvToObjects(text);
+    if(!parsed.rows.length){ warn('CSV appears empty.'); return; }
+    RAW = parsed.rows;
+    RAW_HEADERS = parsed.headers;
+    autoMap(RAW_HEADERS);
+    buildMappingUI(RAW_HEADERS);
+    applyMapFromForm();
+    document.getElementById('mapWrap').style.display = 'block';
+    // update load status pill
+    const statusEl = document.getElementById('loadStatus');
+    if(statusEl){ statusEl.className = 'pill ok'; statusEl.textContent = 'Loaded ' + RAW.length + ' rows'; }
+    document.getElementById('btnRunTop').disabled = false;
+    data = RAW;
+    const baselineVal = Math.max(1, Number(document.getElementById('inpBaseline').value) || 6);
+    const regVal = Number(document.getElementById('inpRegMonths') && document.getElementById('inpRegMonths').value) || null;
+    hist = buildHistory(data, baselineVal, regVal);
+    if(!hist){ warn('Could not compute history; check mapping.'); return; }
+    // If attrition rates are available from the dataset, populate the attrition inputs and enable attrition by default
+    if(hist.attrRates){
+      const f = (v) => isFinite(v) ? (v * 100).toFixed(2) : '0';
+      // Prefill attrition inputs based on computed rates but leave the checkbox unchecked by default
+      document.getElementById('useAttr').checked = false;
+      document.getElementById('attrFTE').value = f(hist.attrRates.FTE);
+      document.getElementById('attrPTE').value = f(hist.attrRates.PTE);
+      document.getElementById('attrFTC').value = f(hist.attrRates.FTC);
+      document.getElementById('attrPTC').value = f(hist.attrRates.PTC);
+    }
+    // Prefill priority allocation range inputs based on computed ratioRange and disable editing
+    if(hist.ratioRange){
+      const eMin = document.getElementById('rngEmin');
+      const eMax = document.getElementById('rngEmax');
+      const sMin = document.getElementById('rngSmin');
+      const sMax = document.getElementById('rngSmax');
+      const mMin = document.getElementById('rngMmin');
+      const mMax = document.getElementById('rngMmax');
+      eMin.value = (hist.ratioRange.E.min * 100).toFixed(1);
+      eMax.value = (hist.ratioRange.E.max * 100).toFixed(1);
+      sMin.value = (hist.ratioRange.S.min * 100).toFixed(1);
+      sMax.value = (hist.ratioRange.S.max * 100).toFixed(1);
+      mMin.value = (hist.ratioRange.M.min * 100).toFixed(1);
+      mMax.value = (hist.ratioRange.M.max * 100).toFixed(1);
+      // Ensure the inputs are disabled until custom range is enabled
+      [eMin,eMax,sMin,sMax,mMin,mMax].forEach(el => { if(el) el.disabled = true; });
+      // Reset the custom range checkbox
+      const cr = document.getElementById('useCustomRange');
+      if(cr) cr.checked = false;
+    }
+    buildStaffingPlan(hist.lastPeriod.y, hist.lastPeriod.m);
+    validate();
+  }catch(e){ warn('Error: ' + e.message); }
+}
+// ===== CSV & Mapping =====
+function stripBOM(s){ return s && s.charCodeAt(0)===0xFEFF ? s.slice(1) : s; }
+function parseCSV(text){
+  const rows=[]; let i=0,cur='',row=[],inQ=false;
+  while(i<text.length){
+    const ch=text[i];
+    if(inQ){
+      if(ch=='"'){ if(text[i+1]=='"'){cur+='"'; i++;} else {inQ=false;} }
+      else cur+=ch;
+    }else{
+      if(ch=='"') inQ=true;
+      else if(ch==','){ row.push(cur); cur=''; }
+      else if(ch=='\n'){ row.push(cur); rows.push(row); row=[]; cur=''; }
+      else if(ch=='\r'){} else cur+=ch;
+    }
+    i++;
+  }
+  if(cur.length || row.length){ row.push(cur); rows.push(row); }
+  return rows.filter(r=> r.some(c=> String(c).trim()!==''));
+}
+function normalizeHeader(h){
+  h=stripBOM(String(h||''));
+  return h.trim().toLowerCase()
+    .replace(/&/g,'and')
+    .replace(/average wait time \(weeks\)|average wait time weeks/g,'avg_wait_wk')
+    .replace(/hearing requests received/g,'requests')
+    .replace(/hearing performed/g,'hearings')
+    .replace(/employees -/g,'employees ')
+    .replace(/filled slots/g,'filled_slots')
+    .replace(/unfilled slots/g,'unfilled_slots')
+    .replace(/\s*-\s*/g,'_')
+    .replace(/[()]/g,'').replace(/[\/ ]/g,'_')
+    .replace(/__+/g,'_').replace(/^_+|_+$/g,'');
+}
+function csvToObjects(text){
+  const rows=parseCSV(text); if(!rows.length) return [];
+  const rawH=rows[0]; const headers=rawH.map(normalizeHeader);
+  const out=[];
+  for(let r=1;r<rows.length;r++){
+    const obj={};
+    for(let c=0;c<headers.length;c++){ obj[headers[c]]=rows[r][c] ?? ''; }
+    out.push(obj);
+  }
+  return {rows:out, headers};
+}
+
+const REQUIRED = {
+  period_ym: ['period_ym','year+month'],
+  year: ['year'],
+  month: ['month'],
+  employees_ft_emp: [], employees_pt_emp: [], employees_ft_ctr: [], employees_pt_ctr: [],
+  requests_emergency: [], requests_standard: [], requests_monetary: [],
+  hearings_emergency: [], hearings_standard: [], hearings_monetary: [],
+  avg_wait_wk_emergency: [], avg_wait_wk_standard: [], avg_wait_wk_monetary: []
+};
+
+let RAW=[], RAW_HEADERS=[];
+let MAP = {};
+let data=[], hist=null, sim=[], lastPeriod=null;
+let forecastStats = null;
+
+function buildMappingUI(headers){
+  const wrap=document.getElementById('mappingForm'); wrap.innerHTML='';
+  const options = h => headers.map(x=>`<option value="${x}">${x}</option>`).join('');
+  const mk = (name, label) => {
+    return `<div>
+      <label>${label}</label>
+      <select data-map="${name}">
+        <option value="">-- select --</option>
+        ${options(headers)}
+      </select>
+    </div>`;
+  };
+  const fields = [
+    ['period_ym','Period (period_ym)'],
+    ['year','Year (if no period_ym)'],
+    ['month','Month (if no period_ym)'],
+    ['employees_ft_emp','Employees - FT Emp'],
+    ['employees_pt_emp','Employees - PT Emp'],
+    ['employees_ft_ctr','Employees - FT Contractor'],
+    ['employees_pt_ctr','Employees - PT Contractor'],
+    ['requests_emergency','Requests - Emergency'],
+    ['requests_standard','Requests - Standard'],
+    ['requests_monetary','Requests - Monetary'],
+    ['hearings_emergency','Hearings - Emergency'],
+    ['hearings_standard','Hearings - Standard'],
+    ['hearings_monetary','Hearings - Monetary'],
+    ['avg_wait_wk_emergency','Avg Wait (wks) - Emergency'],
+    ['avg_wait_wk_standard','Avg Wait (wks) - Standard'],
+    ['avg_wait_wk_monetary','Avg Wait (wks) - Monetary']
+  ];
+  fields.forEach(([k,l])=>{
+    const div=document.createElement('div'); div.innerHTML=mk(k,l);
+    wrap.appendChild(div);
+    const sel=div.querySelector('select'); sel.value=MAP[k] ?? '';
+  });
+}
+
+function autoMap(headers){
+  const setIf = (key,cand) => { const hit=headers.find(h=>h===cand); if(hit) MAP[key]=hit; };
+  const findLike = (key, contains) => {
+    const hit=headers.find(h=> contains.some(s=> h.includes(s)));
+    if(hit) MAP[key]=hit;
+  };
+  Object.keys(REQUIRED).forEach(k=> setIf(k,k));
+  findLike('period_ym',['period','ym','yyyy-mm']);
+  findLike('employees_ft_emp',['employees_ft_emp','ft_emp']);
+  findLike('employees_pt_emp',['employees_pt_emp','pt_emp']);
+  findLike('employees_ft_ctr',['employees_ft_ctr','ft_ctr','ft_contractor']);
+  findLike('employees_pt_ctr',['employees_pt_ctr','pt_ctr','pt_contractor']);
+  findLike('requests_emergency',['requests_emergency','emergency_requests']);
+  findLike('requests_standard',['requests_standard','standard_requests']);
+  findLike('requests_monetary',['requests_monetary','monetary_requests']);
+  findLike('hearings_emergency',['hearings_emergency','emergency_hearings']);
+  findLike('hearings_standard',['hearings_standard','standard_hearings']);
+  findLike('hearings_monetary',['hearings_monetary','monetary_hearings']);
+  findLike('avg_wait_wk_emergency',['avg_wait_wk_emergency','avg_wait_emergency']);
+  findLike('avg_wait_wk_standard',['avg_wait_wk_standard','avg_wait_standard']);
+  findLike('avg_wait_wk_monetary',['avg_wait_wk_monetary','avg_wait_monetary']);
+  if(headers.includes('year')) MAP['year']='year';
+  if(headers.includes('month')) MAP['month']='month';
+}
+
+function applyMapFromForm(){
+  document.querySelectorAll('[data-map]').forEach(sel=>{
+    MAP[sel.getAttribute('data-map')] = sel.value || '';
+  });
+  document.getElementById('mapMsg').style.display='inline-block';
+  setTimeout(()=> document.getElementById('mapMsg').style.display='none', 1800);
+  const miss=[];
+  if(!(MAP.period_ym || (MAP.year && MAP.month))) miss.push('period_ym or (year & month)');
+  ['employees_ft_emp','employees_pt_emp','employees_ft_ctr','employees_pt_ctr',
+   'requests_emergency','requests_standard','requests_monetary',
+   'hearings_emergency','hearings_standard','hearings_monetary'].forEach(k=>{ if(!MAP[k]) miss.push(k); });
+  document.getElementById('diag').innerHTML = `Mapped: <code>${Object.entries(MAP).filter(([k,v])=>v).map(([k,v])=>k+'→'+v).join('</code>, <code>')}</code><br/>Missing: <code>${miss.join('</code>, <code>')||'none'}</code>`;
+}
+
+function toNum(x){ if(x===null||x===undefined) return NaN; const n=Number(String(x).replace(/,/g,'')); return isFinite(n)?n:NaN; }
+const MM={january:1,february:2,march:3,april:4,may:5,june:6,july:7,august:8,september:9,october:10,november:11,december:12};
+
+function getVal(r,key){ const col=MAP[key]; return col? r[col] : ''; }
+
+function getPeriod(obj){
+  let p=getVal(obj,'period_ym');
+  let Y=null,M=null;
+  if(p && /\d{4}-\d{2}/.test(p)){ Y=Number(p.slice(0,4)); M=Number(p.slice(5,7)); }
+  else {
+    Y = toNum(getVal(obj,'year')); const raw=(getVal(obj,'month')||'').toString().toLowerCase();
+    if(raw && MM[raw]) M=MM[raw]; else if(raw && /^\d{1,2}$/.test(raw)) M=Number(raw);
+  }
+  if(!Y||!M) return null;
+  return {y:Y,m:M,key:`${Y}-${String(M).padStart(2,'0')}`};
+}
+function monthAdd(year,month,add){ let y=year,m=month+add; y+=Math.floor((m-1)/12); m=((m-1)%12)+1; return {y,m}; }
+
+function buildHistory(rows, baselineMonths, regressionMonths){
+  const keyed=rows.map(r=>{
+    const p=getPeriod(r); if(!p) return null;
+    return {y:p.y,m:p.m,r};
+  }).filter(Boolean).sort((a,b)=> (a.y-b.y)||(a.m-b.m));
+  if(!keyed.length) return null;
+  const last=keyed[keyed.length-1].r;
+  lastPeriod = getPeriod(last);
+
+  function avg(colKey){
+    const col=MAP[colKey]; if(!col) return NaN;
+    const xs=keyed.slice(-baselineMonths).map(x=> toNum(x.r[col]) ).filter(x=>!isNaN(x));
+    if(!xs.length) return NaN;
+    return xs.reduce((a,b)=>a+b,0)/xs.length;
+  }
+
+  const reqE=avg('requests_emergency'), reqS=avg('requests_standard'), reqM=avg('requests_monetary');
+  const reqTotal=[reqE,reqS,reqM].filter(x=>!isNaN(x)).reduce((a,b)=>a+b,0);
+  const ratioE=reqTotal? reqE/reqTotal : 0.33, ratioS=reqTotal? reqS/reqTotal : 0.33, ratioM=reqTotal? reqM/reqTotal : 0.34;
+
+  // Determine rows used for regression; use the last regressionMonths entries if provided, otherwise use all keyed.
+  const regKeyed = (regressionMonths && regressionMonths > 0) ? keyed.slice(-Math.max(1, regressionMonths)) : keyed;
+
+  // Compute observed request ratio ranges (min and max share of each priority) across the dataset.
+  let minE = 1, maxE = 0, minS = 1, maxS = 0, minM = 1, maxM = 0;
+  keyed.forEach(x => {
+    const r = x.r;
+    const e = toNum(r[MAP['requests_emergency']]) || 0;
+    const s = toNum(r[MAP['requests_standard']]) || 0;
+    const m = toNum(r[MAP['requests_monetary']]) || 0;
+    const total = e + s + m;
+    if(total > 0){
+      const re = e / total;
+      const rs = s / total;
+      const rm = m / total;
+      if(re < minE) minE = re; if(re > maxE) maxE = re;
+      if(rs < minS) minS = rs; if(rs > maxS) maxS = rs;
+      if(rm < minM) minM = rm; if(rm > maxM) maxM = rm;
+    }
+  });
+  // Fallback to reasonable defaults if computed ranges are invalid or degenerate.
+  function fallbackRange(min, max, defMin, defMax){
+    if(!isFinite(min) || !isFinite(max) || min < 0 || max <= 0 || min >= max){
+      return {min: defMin, max: defMax};
+    }
+    return {min, max};
+  }
+  const ratioRange = {
+    E: fallbackRange(minE, maxE, 0.02, 0.05),
+    S: fallbackRange(minS, maxS, 0.60, 0.85),
+    M: fallbackRange(minM, maxM, 0.30, 0.40)
+  };
+
+  const capMonthly=keyed.map(x=>{
+    const he=toNum(x.r[MAP['hearings_emergency']])||0;
+    const hs=toNum(x.r[MAP['hearings_standard']])||0;
+    const hm=toNum(x.r[MAP['hearings_monetary']])||0;
+    const total=he+hs+hm;
+    const fte=toNum(x.r[MAP['employees_ft_emp']])||0;
+    const pte=toNum(x.r[MAP['employees_pt_emp']])||0;
+    const ftc=toNum(x.r[MAP['employees_ft_ctr']])||0;
+    const ptc=toNum(x.r[MAP['employees_pt_ctr']])||0;
+    const staffTotal=fte+pte+ftc+ptc;
+    return {total, staffTotal};
+  });
+  const capPerHead = (()=>{
+    const vals=capMonthly.map(x=> x.staffTotal>0 ? x.total/x.staffTotal : NaN).filter(x=>!isNaN(x));
+    if(!vals.length) return 0;
+    return vals.reduce((a,b)=>a+b,0)/vals.length;
+  })();
+
+  const lastFTE=toNum(last[MAP['employees_ft_emp']])||0;
+  const lastPTE=toNum(last[MAP['employees_pt_emp']])||0;
+  const lastFTC=toNum(last[MAP['employees_ft_ctr']])||0;
+  const lastPTC=toNum(last[MAP['employees_pt_ctr']])||0;
+
+  // Compute regression coefficients (k,b) to model changes in wait times as a function of demand/capacity ratio.
+  // For each priority, collect ratio = requests/hearings and delta = change in wait times.
+  const coeff = {E:{k:0,b:0}, S:{k:0,b:0}, M:{k:0,b:0}};
+  const lastWait = {E:0,S:0,M:0};
+  ['E','S','M'].forEach(prio=>{
+    // Build regression arrays using only the recent window defined by regressionMonths (if provided)
+    let prevWait=null;
+    const xs=[];
+    const ys=[];
+    for(const x of regKeyed){
+      const r=x.r;
+      let req=0, hear=0, wait=0;
+      if(prio==='E'){
+        req = toNum(r[MAP['requests_emergency']])||0;
+        hear = toNum(r[MAP['hearings_emergency']])||0;
+        wait = toNum(r[MAP['avg_wait_wk_emergency']])||0;
+      } else if(prio==='S'){
+        req = toNum(r[MAP['requests_standard']])||0;
+        hear = toNum(r[MAP['hearings_standard']])||0;
+        wait = toNum(r[MAP['avg_wait_wk_standard']])||0;
+      } else {
+        req = toNum(r[MAP['requests_monetary']])||0;
+        hear = toNum(r[MAP['hearings_monetary']])||0;
+        wait = toNum(r[MAP['avg_wait_wk_monetary']])||0;
+      }
+      const ratio = hear>0 ? req / hear : 1;
+      let delta=0;
+      if(prevWait!==null){
+        delta = wait - prevWait;
+      }
+      xs.push((ratio - 1));
+      ys.push(delta);
+      prevWait = wait;
+    }
+    // compute regression coefficients: k = cov(x,y)/var(x); b = mean(y) - k*mean(x)
+    const n = xs.length;
+    let sumX=0,sumY=0,sumXX=0,sumXY=0;
+    for(let i=0;i<n;i++){
+      const xVal = xs[i]; const yVal = ys[i];
+      sumX += xVal; sumY += yVal; sumXX += xVal*xVal; sumXY += xVal*yVal;
+    }
+    const meanX = n ? sumX / n : 0;
+    const meanY = n ? sumY / n : 0;
+    const varX = sumXX - (sumX*sumX)/ (n||1);
+    const covXY = sumXY - (sumX*sumY)/ (n||1);
+    let k = 0; let bVal = 0;
+    if(varX !== 0){ k = covXY / varX; }
+    bVal = meanY - k * meanX;
+    if(prio==='E') coeff.E = {k,b:bVal};
+    else if(prio==='S') coeff.S = {k,b:bVal};
+    else coeff.M = {k,b:bVal};
+  });
+  // Record last observed waits from the full dataset rather than the regression window
+  const lastRow = keyed[keyed.length-1] && keyed[keyed.length-1].r;
+  if(lastRow){
+    lastWait.E = toNum(lastRow[MAP['avg_wait_wk_emergency']]) || 0;
+    lastWait.S = toNum(lastRow[MAP['avg_wait_wk_standard']]) || 0;
+    lastWait.M = toNum(lastRow[MAP['avg_wait_wk_monetary']]) || 0;
+  }
+
+  const cum={E:0,S:0,M:0,He:0,Hs:0,Hm:0};
+  keyed.forEach(x=>{
+    const r=x.r;
+    cum.E+=toNum(r[MAP['requests_emergency']])||0;
+    cum.S+=toNum(r[MAP['requests_standard']])||0;
+    cum.M+=toNum(r[MAP['requests_monetary']])||0;
+    cum.He+=toNum(r[MAP['hearings_emergency']])||0;
+    cum.Hs+=toNum(r[MAP['hearings_standard']])||0;
+    cum.Hm+=toNum(r[MAP['hearings_monetary']])||0;
+  });
+  const backlog={E:Math.max(0,cum.E-cum.He), S:Math.max(0,cum.S-cum.Hs), M:Math.max(0,cum.M-cum.Hm)};
+
+  // ----- Compute additional statistics -----
+  // Build arrays of wait times by priority for resistance threshold calculation
+  const waits = {E:[], S:[], M:[]};
+  keyed.forEach(x => {
+    const r = x.r;
+    const wE = toNum(r[MAP['avg_wait_wk_emergency']]);
+    const wS = toNum(r[MAP['avg_wait_wk_standard']]);
+    const wM = toNum(r[MAP['avg_wait_wk_monetary']]);
+    if(!isNaN(wE)) waits.E.push(wE);
+    if(!isNaN(wS)) waits.S.push(wS);
+    if(!isNaN(wM)) waits.M.push(wM);
+  });
+  function percentile(arr, p){
+    const vals = arr.filter(x=>!isNaN(x)).sort((a,b)=>a-b);
+    if(!vals.length) return NaN;
+    const idx = Math.floor((vals.length - 1) * p);
+    return vals[idx];
+  }
+  // Use the upper quartile (75th percentile) as the resistance threshold for each priority.
+  // A higher threshold creates more "resistance" as wait times approach the floor, so they decline more slowly.
+  const resistThr = {
+    E: percentile(waits.E, 0.75),
+    S: percentile(waits.S, 0.75),
+    M: percentile(waits.M, 0.75)
+  };
+
+  // Compute attrition rates per employment type across the last baselineMonths
+  const attrRates = {FTE:0, PTE:0, FTC:0, PTC:0};
+  if(keyed.length > 1 && baselineMonths > 0){
+    const span = Math.min(baselineMonths, keyed.length - 1);
+    const rates = {FTE:[], PTE:[], FTC:[], PTC:[]};
+    for(let idx = keyed.length - span; idx < keyed.length - 1; idx++){
+      const prevR = keyed[idx].r;
+      const currR = keyed[idx+1].r;
+      const cols = ['employees_ft_emp','employees_pt_emp','employees_ft_ctr','employees_pt_ctr'];
+      const keys = ['FTE','PTE','FTC','PTC'];
+      for(let j=0; j<cols.length; j++){
+        const col = cols[j];
+        const kKey = keys[j];
+        const prevVal = toNum(prevR[MAP[col]]) || 0;
+        const currVal = toNum(currR[MAP[col]]) || 0;
+        if(prevVal > 0){
+          const diff = prevVal - currVal;
+          if(diff > 0){
+            rates[kKey].push(diff / prevVal);
+          }
+        }
+      }
+    }
+    ['FTE','PTE','FTC','PTC'].forEach(k => {
+      if(rates[k].length){
+        attrRates[k] = rates[k].reduce((a,b)=>a+b,0) / rates[k].length;
+      } else {
+        attrRates[k] = 0;
+      }
+    });
+  }
+
+  // Compute historical model accuracy (mean absolute error) by predicting next month's wait from current
+  const errs = {E:[], S:[], M:[]};
+  if(keyed.length > 1){
+    for(let i=0; i<keyed.length-1; i++){
+      const curR = keyed[i].r;
+      const nextR = keyed[i+1].r;
+      ['E','S','M'].forEach(prio => {
+        let req=0, hear=0, wCur=0, wNext=0;
+        if(prio==='E'){
+          req = toNum(curR[MAP['requests_emergency']])||0;
+          hear = toNum(curR[MAP['hearings_emergency']])||0;
+          wCur = toNum(curR[MAP['avg_wait_wk_emergency']])||0;
+          wNext = toNum(nextR[MAP['avg_wait_wk_emergency']])||0;
+        } else if(prio==='S'){
+          req = toNum(curR[MAP['requests_standard']])||0;
+          hear = toNum(curR[MAP['hearings_standard']])||0;
+          wCur = toNum(curR[MAP['avg_wait_wk_standard']])||0;
+          wNext = toNum(nextR[MAP['avg_wait_wk_standard']])||0;
+        } else {
+          req = toNum(curR[MAP['requests_monetary']])||0;
+          hear = toNum(curR[MAP['hearings_monetary']])||0;
+          wCur = toNum(curR[MAP['avg_wait_wk_monetary']])||0;
+          wNext = toNum(nextR[MAP['avg_wait_wk_monetary']])||0;
+        }
+        const ratio = hear>0 ? req/hear : 1;
+        const {k,b} = coeff[prio];
+        const predNext = wCur + (k*(ratio - 1) + b);
+        errs[prio].push(Math.abs(predNext - wNext));
+      });
+    }
+  }
+  const errorStats = {
+    E: errs.E.length ? (errs.E.reduce((a,b)=>a+b,0) / errs.E.length) : NaN,
+    S: errs.S.length ? (errs.S.reduce((a,b)=>a+b,0) / errs.S.length) : NaN,
+    M: errs.M.length ? (errs.M.reduce((a,b)=>a+b,0) / errs.M.length) : NaN
+  };
+
+  // Compute monetary inefficiency factor from filled/unfilled slots (based on recent window)
+  const { isFilled: monFilled, isUnfilled: monUnfilled } = slotMatchers('monetary');
+  const monFrac = [];
+  keyed.forEach(x => {
+    const r = x.r;
+    const f = sumCols(r, monFilled);
+    const u = sumCols(r, monUnfilled);
+    const offered = f + u;
+    if(offered > 0){ monFrac.push(u / offered); }
+  });
+  const windowN = (regressionMonths && regressionMonths > 0) ? regressionMonths : baselineMonths;
+  const recent = monFrac.slice(-Math.max(1, windowN));
+  let monetaryInefficiency = 0;
+  if(recent.length){
+    const avgI = recent.reduce((a,b)=>a+b,0) / recent.length;
+    monetaryInefficiency = Math.max(0, Math.min(0.25, avgI));
+  }
+
+  return {
+    lastPeriod,
+    capPerHead,
+    ratio:{E:ratioE,S:ratioS,M:ratioM},
+    baseReq:{E:reqE||0,S:reqS||0,M:reqM||0},
+    lastStaff:{FTE:lastFTE,PTE:lastPTE,FTC:lastFTC,PTC:lastPTC},
+    backlog,
+    lastWait,
+    coeff,
+    ratioRange,
+    resistThr,
+    errorStats,
+    attrRates,
+    monetaryInefficiency
+  };
+}
+
+function warn(msg){ document.getElementById('warnings').textContent = msg || ''; }
+function diag(html){ document.getElementById('diag2').innerHTML = html || ''; }
+
+function drawLine(canvas, labels, points){
+  const ctx=canvas.getContext('2d');
+  const W=canvas.width=canvas.clientWidth, H=canvas.height=canvas.clientHeight;
+  ctx.clearRect(0,0,W,H);
+  ctx.strokeStyle='#223055'; ctx.lineWidth=1;
+  ctx.beginPath(); ctx.moveTo(40,10); ctx.lineTo(40,H-30); ctx.lineTo(W-10,H-30); ctx.stroke();
+  const maxY = Math.max(1, (points && points.length ? Math.max(...points) : 1)) * 1.1;
+  const y=v=> (H-30) - (v/maxY) * (H-40);
+  const x=i=> 40 + i * ((W-60)/Math.max(1,(labels.length-1)));
+  ctx.strokeStyle='#162445'; for(let gy=4; gy>=0; gy--){ const yy=10+gy*((H-40)/4); ctx.beginPath(); ctx.moveTo(40,yy); ctx.lineTo(W-10,yy); ctx.stroke(); }
+  ctx.strokeStyle='#e9eef9'; ctx.lineWidth=2; ctx.beginPath();
+  points.forEach((v,i)=>{ const xx=x(i), yy=y(v); if(i===0) ctx.moveTo(xx,yy); else ctx.lineTo(xx,yy); });
+  ctx.stroke(); ctx.fillStyle='#e9eef9';
+  points.forEach((v,i)=>{ const xx=x(i), yy=y(v); ctx.beginPath(); ctx.arc(xx,yy,3,0,Math.PI*2); ctx.fill(); });
+  // Draw labels and point values with full labels and two decimal places
+  ctx.fillStyle='#9fb0ce'; ctx.font='11px system-ui';
+  ctx.textAlign='center';
+  labels.forEach((lab,i)=>{
+    const xx=x(i);
+    // X-axis label shows the full period label
+    ctx.fillText(lab, xx, H - 12);
+  });
+  // Draw point values above the circles
+  ctx.fillStyle='#cfe0ff';
+  points.forEach((v,i)=>{
+    const xx=x(i), yy=y(v);
+    ctx.fillText(v.toFixed(2), xx, yy - 8);
+  });
+  // Title on the y-axis (max value)
+  ctx.fillStyle='#9fb0ce'; ctx.textAlign='left';
+  ctx.fillText(maxY.toFixed(1)+' wks', 44, 18);
+}
+
+function buildStaffingPlan(baseYear, baseMonth){
+  const container=document.getElementById('staffingPlan');
+  const months=[];
+  let html='<div class="scroll"><table><thead><tr><th>Period</th><th>Δ FT Emp</th><th>Δ PT Emp</th><th>Δ FT Ctr</th><th>Δ PT Ctr</th></tr></thead><tbody>';
+  for(let i=1;i<=12;i++){
+    const t=monthAdd(baseYear, baseMonth, i);
+    const label=`${t.y}-${String(t.m).padStart(2,'0')}`;
+    months.push(label);
+    html+=`<tr>
+      <td style="text-align:left">${label}</td>
+      <td><input type="number" step="1" value="0" id="sp_fte_${i}"></td>
+      <td><input type="number" step="1" value="0" id="sp_pte_${i}"></td>
+      <td><input type="number" step="1" value="0" id="sp_ftc_${i}"></td>
+      <td><input type="number" step="1" value="0" id="sp_ptc_${i}"></td>
+    </tr>`;
+  }
+  html+='</tbody></table></div>';
+  container.innerHTML=html;
+  // Attach change listeners to staffing plan inputs to update border color and re-run simulation
+  const planInputs = container.querySelectorAll('input[type="number"]');
+  planInputs.forEach(inp => {
+    // reset border color initially
+    inp.style.borderColor = 'var(--line)';
+    inp.addEventListener('input', () => {
+      const val = Number(inp.value);
+      if(val > 0){
+        inp.style.borderColor = '#39d353'; // green for positive
+      } else if(val < 0){
+        inp.style.borderColor = '#ff6b6b'; // red for negative
+      } else {
+        inp.style.borderColor = 'var(--line)'; // default for zero
+      }
+      // Update charts and results whenever a staffing delta changes.
+      if(hist && hist.lastPeriod){
+        // Ensure the forecast view is visible when recalculating so canvases have width
+        simulate();
+      }
+    });
+  });
+  return months;
+}
+
+function simulate(){
+  if(!hist || !hist.lastPeriod){ warn('No history loaded.'); return; }
+  warn('');
+  const growthPct = Number(document.getElementById('inpGrowthPct').value) || 0;
+  const minWait = Math.max(0, Number(document.getElementById('inpMinWait').value) || 0);
+  const wt = {
+    FTE: Number(document.getElementById('wtFTEmp').value) || 1.0,
+    PTE: Number(document.getElementById('wtPTEmp').value) || 0.6,
+    FTC: Number(document.getElementById('wtFTCtr').value) || 0.9,
+    PTC: Number(document.getElementById('wtPTCtr').value) || 0.5,
+  };
+  const rCurve=[
+    Number(document.getElementById('r0').value) || 0.7,
+    Number(document.getElementById('r1').value) || 0.9,
+    Number(document.getElementById('r2').value) || 0.95,
+    Number(document.getElementById('r3').value) || 1.0,
+  ];
+  const useAttr=document.getElementById('useAttr').checked;
+  const attrPct={
+    FTE: useAttr ? (Number(document.getElementById('attrFTE').value)||0)/100 : 0,
+    PTE: useAttr ? (Number(document.getElementById('attrPTE').value)||0)/100 : 0,
+    FTC: useAttr ? (Number(document.getElementById('attrFTC').value)||0)/100 : 0,
+    PTC: useAttr ? (Number(document.getElementById('attrPTC').value)||0)/100 : 0,
+  };
+  const deltas=[];
+  for(let i=1;i<=12;i++){
+    deltas.push({
+      FTE: Number(document.getElementById('sp_fte_'+i).value) || 0,
+      PTE: Number(document.getElementById('sp_pte_'+i).value) || 0,
+      FTC: Number(document.getElementById('sp_ftc_'+i).value) || 0,
+      PTC: Number(document.getElementById('sp_ptc_'+i).value) || 0,
+    });
+  }
+  const cohorts={FTE:[],PTE:[],FTC:[],PTC:[]};
+  function effFromCohorts(type){
+    return cohorts[type].reduce((sum,c)=>{
+      const f = c.age===0 ? rCurve[0] : c.age===1 ? rCurve[1] : c.age===2 ? rCurve[2] : rCurve[3];
+      return sum + c.count * f;
+    }, 0);
+  }
+  cohorts.FTE.push({count: hist.lastStaff.FTE, age: 3});
+  cohorts.PTE.push({count: hist.lastStaff.PTE, age: 3});
+  cohorts.FTC.push({count: hist.lastStaff.FTC, age: 3});
+  cohorts.PTC.push({count: hist.lastStaff.PTC, age: 3});
+
+  let baseReq = {...hist.baseReq};
+  const ratioHist = {...hist.ratio};
+  let backlog = {...hist.backlog};
+  // Initialize current wait times from last observed history and pull regression coefficients
+  const coeff = hist.coeff || {E:{k:0,b:0},S:{k:0,b:0},M:{k:0,b:0}};
+  const waitCurrent = {
+    E: (hist.lastWait && !isNaN(hist.lastWait.E)) ? hist.lastWait.E : 0,
+    S: (hist.lastWait && !isNaN(hist.lastWait.S)) ? hist.lastWait.S : 0,
+    M: (hist.lastWait && !isNaN(hist.lastWait.M)) ? hist.lastWait.M : 0,
+  };
+  const labels=[], out=[], auditLines=[];
+  // No persistent zero-capacity flag.  Each month is evaluated independently.
+  // When capacity is zero for a month, waits go to Infinity for that month only, and backlog accumulates.
+  let y=hist.lastPeriod.y, m=hist.lastPeriod.m;
+  for(let i=1;i<=12;i++){
+    const t=monthAdd(y,m,i);
+    // Label uses format MMM-YY for forecasted month/year (e.g., Sep-25)
+    // Separate labels: periodLabel for tables (YYYY-MM) and chartLabel for graphs (e.g., Sep-25)
+    const periodLabel=`${t.y}-${String(t.m).padStart(2,'0')}`;
+    const monthsAbbr=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    // Chart label shows month abbreviation only (e.g., Sep, Oct, Nov)
+    const chartLabel=monthsAbbr[t.m-1];
+    labels.push(chartLabel);
+    ['FTE','PTE','FTC','PTC'].forEach(type=>{
+      if(attrPct[type]>0){
+        cohorts[type].forEach(c=>{ const lost = c.count * attrPct[type]; c.count = Math.max(0, c.count - lost); });
+      }
+    });
+    ['FTE','PTE','FTC','PTC'].forEach(type=>{
+      const d=deltas[i-1][type];
+      if(d>0) cohorts[type].push({count:d, age:0});
+      else if(d<0){
+        let need=-d;
+        cohorts[type].sort((a,b)=> b.age-a.age);
+        for(const c of cohorts[type]){
+          const take=Math.min(need, c.count);
+          c.count -= take; need -= take;
+          if(need<=0) break;
+        }
+        cohorts[type]=cohorts[type].filter(c=>c.count>0);
+      }
+    });
+    const effHeads = (
+      effFromCohorts('FTE')*wt.FTE +
+      effFromCohorts('PTE')*wt.PTE +
+      effFromCohorts('FTC')*wt.FTC +
+      effFromCohorts('PTC')*wt.PTC
+    );
+    const totalCapacity = Math.max(0, hist.capPerHead * effHeads);
+    // Apply growth after the first month
+    if(i>1){
+      baseReq.E *= (1 + growthPct/100);
+      baseReq.S *= (1 + growthPct/100);
+      baseReq.M *= (1 + growthPct/100);
+    }
+    const reqE = baseReq.E, reqS = baseReq.S, reqM = baseReq.M;
+    const totalBacklog = backlog.E + backlog.S + backlog.M;
+
+    // If capacity is zero this month, accumulate backlog and set waits to Infinity for this month only.
+    if(effHeads <= 0 || totalCapacity <= 0){
+      backlog.E = Math.max(0, backlog.E + reqE);
+      backlog.S = Math.max(0, backlog.S + reqS);
+      backlog.M = Math.max(0, backlog.M + reqM);
+      out.push({
+        period: periodLabel,
+        reqE, reqS, reqM,
+        capTotal: 0,
+        capE: 0,
+        capS: 0,
+        capM: 0,
+        backlogE: backlog.E,
+        backlogS: backlog.S,
+        backlogM: backlog.M,
+        waitE: Infinity,
+        waitS: Infinity,
+        waitM: Infinity,
+        effHeads
+      });
+      if(i<=3){
+        auditLines.push(`<div>Month ${i} (${periodLabel})</div><div>Eff heads: ${effHeads.toFixed(2)} | cap/head: ${hist.capPerHead.toFixed(3)} → total cap: 0.0</div>
+        <div>Demand (E/S/M): ${(reqE).toFixed(1)} / ${(reqS).toFixed(1)} / ${(reqM).toFixed(1)}</div><div>Capacity (E/S/M): 0.0 / 0.0 / 0.0</div>
+        <div>Backlog (E/S/M): ${backlog.E.toFixed(1)} / ${backlog.S.toFixed(1)} / ${backlog.M.toFixed(1)}</div><div>Wait (wks) (E/S/M): ∞ / ∞ / ∞</div>`);
+      }
+      // Age cohorts
+      ['FTE','PTE','FTC','PTC'].forEach(type=> cohorts[type].forEach(c=> c.age++));
+      continue;
+    }
+    let ratioE, ratioS, ratioM;
+    // Determine allocation method: historic requests ratio or dynamic backlog ratio
+    const allocMethod = (document.getElementById('allocationMethod') || {}).value || 'requests';
+    if(allocMethod === 'backlog' && totalBacklog > 0){
+      // allocate capacity in proportion to current backlog (dynamic)
+      ratioE = backlog.E / totalBacklog;
+      ratioS = backlog.S / totalBacklog;
+      ratioM = backlog.M / totalBacklog;
+    }else{
+      // fall back to historic requests ratio
+      ratioE = ratioHist.E;
+      ratioS = ratioHist.S;
+      ratioM = ratioHist.M;
+    }
+    // Apply ratio clamping based on priority allocation ranges. Use user‑specified ranges if provided, otherwise fallback to history’s ratioRange.
+    if(hist && hist.ratioRange){
+      // Try to read values from the range inputs in Settings. Values are interpreted as percentages and divided by 100.
+      let rr = hist.ratioRange;
+      const eMinEl = document.getElementById('rngEmin');
+      const eMaxEl = document.getElementById('rngEmax');
+      const sMinEl = document.getElementById('rngSmin');
+      const sMaxEl = document.getElementById('rngSmax');
+      const mMinEl = document.getElementById('rngMmin');
+      const mMaxEl = document.getElementById('rngMmax');
+      if(eMinEl && eMaxEl && sMinEl && sMaxEl && mMinEl && mMaxEl){
+        const eMinVal = Number(eMinEl.value);
+        const eMaxVal = Number(eMaxEl.value);
+        const sMinVal = Number(sMinEl.value);
+        const sMaxVal = Number(sMaxEl.value);
+        const mMinVal = Number(mMinEl.value);
+        const mMaxVal = Number(mMaxEl.value);
+        // If any range is not a number, ignore and use defaults. Otherwise update rr.
+        if(!isNaN(eMinVal) && !isNaN(eMaxVal) && !isNaN(sMinVal) && !isNaN(sMaxVal) && !isNaN(mMinVal) && !isNaN(mMaxVal)){
+          rr = {
+            E: {min: Math.max(0, eMinVal)/100, max: Math.max(0, eMaxVal)/100},
+            S: {min: Math.max(0, sMinVal)/100, max: Math.max(0, sMaxVal)/100},
+            M: {min: Math.max(0, mMinVal)/100, max: Math.max(0, mMaxVal)/100}
+          };
+        }
+      }
+      // Clamp ratios within their min/max boundaries
+      ratioE = Math.min(Math.max(ratioE, rr.E.min), rr.E.max);
+      ratioS = Math.min(Math.max(ratioS, rr.S.min), rr.S.max);
+      ratioM = Math.min(Math.max(ratioM, rr.M.min), rr.M.max);
+      // Renormalize to sum to 1 (avoiding division by zero)
+      const sumRat = ratioE + ratioS + ratioM;
+      if(sumRat > 0){
+        ratioE /= sumRat;
+        ratioS /= sumRat;
+        ratioM /= sumRat;
+      }
+    }
+    const capE = totalCapacity * ratioE;
+    const capS = totalCapacity * ratioS;
+    const capM = totalCapacity * ratioM;
+    // Adjust Monetary capacity by inefficiency factor learned from history
+    const ineffM = (hist && typeof hist.monetaryInefficiency === 'number') ? hist.monetaryInefficiency : 0;
+    const capM_eff = capM * (1 - ineffM);
+    // Update backlog based on demand and executed capacity; use effective Monetary capacity
+    backlog.E = Math.max(0, backlog.E + reqE - capE);
+    backlog.S = Math.max(0, backlog.S + reqS - capS);
+    backlog.M = Math.max(0, backlog.M + reqM - capM_eff);
+    // Compute demand/capacity ratios and update waits using regression coefficients
+    const ratioDemE = capE > 0 ? (reqE / capE) : 1;
+    const ratioDemS = capS > 0 ? (reqS / capS) : 1;
+    const ratioDemM = capM_eff > 0 ? (reqM / capM_eff) : 1;
+    // Apply resistance factor when wait approaches the floor.  Each priority has its own
+    // threshold derived from historical data (stored in hist.resistThr).  If no threshold
+    // is available or it is below the floor, fall back to floor+1.
+    const rThr = (hist && hist.resistThr) ? hist.resistThr : {E:2.5,S:2.5,M:2.5};
+    // Update Emergency wait: apply resistance only when improvements (delta < 0)
+    {
+      const deltaE = coeff.E.k * (ratioDemE - 1) + coeff.E.b;
+      let thrE = rThr.E;
+      if(isNaN(thrE) || thrE <= minWait){ thrE = minWait + 2; }
+      const downScaleE = (thrE > minWait) ? Math.min(1, Math.max(0, (waitCurrent.E - minWait)/(thrE - minWait))) : 1;
+      const scaledDeltaE = (deltaE < 0) ? (deltaE * downScaleE) : deltaE;
+      waitCurrent.E = Math.max(minWait, waitCurrent.E + scaledDeltaE);
+    }
+    // Update Standard wait: apply resistance only when improvements (delta < 0)
+    {
+      const deltaS = coeff.S.k * (ratioDemS - 1) + coeff.S.b;
+      let thrS = rThr.S;
+      if(isNaN(thrS) || thrS <= minWait){ thrS = minWait + 2; }
+      const downScaleS = (thrS > minWait) ? Math.min(1, Math.max(0, (waitCurrent.S - minWait)/(thrS - minWait))) : 1;
+      const scaledDeltaS = (deltaS < 0) ? (deltaS * downScaleS) : deltaS;
+      waitCurrent.S = Math.max(minWait, waitCurrent.S + scaledDeltaS);
+    }
+    // Update Monetary wait: apply resistance only when improvements (delta < 0)
+    {
+      const deltaM = coeff.M.k * (ratioDemM - 1) + coeff.M.b;
+      let thrM = rThr.M;
+      if(isNaN(thrM) || thrM <= minWait){ thrM = minWait + 2; }
+      const downScaleM = (thrM > minWait) ? Math.min(1, Math.max(0, (waitCurrent.M - minWait)/(thrM - minWait))) : 1;
+      const scaledDeltaM = (deltaM < 0) ? (deltaM * downScaleM) : deltaM;
+      waitCurrent.M = Math.max(minWait, waitCurrent.M + scaledDeltaM);
+    }
+    const wE = waitCurrent.E;
+    const wS = waitCurrent.S;
+    const wM = waitCurrent.M;
+    out.push({
+      period: periodLabel, reqE, reqS, reqM,
+      capTotal: totalCapacity, capE, capS, capM: capM_eff,
+      backlogE: backlog.E, backlogS: backlog.S, backlogM: backlog.M,
+      waitE: wE, waitS: wS, waitM: wM, effHeads
+    });
+    if(i<=3){
+      auditLines.push(`<div>Month ${i} (${periodLabel})</div><div>Eff heads: ${effHeads.toFixed(2)} | cap/head: ${hist.capPerHead.toFixed(3)} → total cap: ${totalCapacity.toFixed(1)}</div>
+      <div>Demand (E/S/M): ${(reqE).toFixed(1)} / ${(reqS).toFixed(1)} / ${(reqM).toFixed(1)}</div><div>Capacity (E/S/M): ${capE.toFixed(1)} / ${capS.toFixed(1)} / ${capM.toFixed(1)}</div>
+      <div>Backlog (E/S/M): ${backlog.E.toFixed(1)} / ${backlog.S.toFixed(1)} / ${backlog.M.toFixed(1)}</div><div>Wait (wks) (E/S/M): ${wE.toFixed(2)} / ${wS.toFixed(2)} / ${wM.toFixed(2)}</div>`);
+    }
+    ['FTE','PTE','FTC','PTC'].forEach(type=> cohorts[type].forEach(c=> c.age++));
+  }
+  sim=out;
+  // Compute forecast statistics (min and max waits per priority) for diagnostics
+  if(out && out.length){
+    const wE = out.map(x=>x.waitE);
+    const wS = out.map(x=>x.waitS);
+    const wM = out.map(x=>x.waitM);
+    forecastStats = {
+      E: {min: safeMin(wE), max: safeMax(wE)},
+      S: {min: safeMin(wS), max: safeMax(wS)},
+      M: {min: safeMin(wM), max: safeMax(wM)}
+    };
+  } else {
+    forecastStats = null;
+  }
+  drawLine(document.getElementById('chartEm'), labels, out.map(x=>x.waitE));
+  drawLine(document.getElementById('chartSt'), labels, out.map(x=>x.waitS));
+  drawLine(document.getElementById('chartMo'), labels, out.map(x=>x.waitM));
+  const tbl=['<table><thead><tr>',
+    '<th>Period</th>',
+    '<th>Requests(E)</th><th>Requests(S)</th><th>Requests(M)</th>',
+    '<th>Cap Total</th><th>Cap E</th><th>Cap S</th><th>Cap M</th>',
+    '<th>Backlog E</th><th>Backlog S</th><th>Backlog M</th>',
+    '<th>Wait E (wks)</th><th>Wait S (wks)</th><th>Wait M (wks)</th>',
+    '<th>Eff Heads</th>',
+  '</tr></thead><tbody>'];
+  out.forEach(r=>{
+    tbl.push('<tr>',
+      `<td style="text-align:left">${r.period}</td>`,
+      `<td>${r.reqE.toFixed(1)}</td><td>${r.reqS.toFixed(1)}</td><td>${r.reqM.toFixed(1)}</td>`,
+      `<td>${r.capTotal.toFixed(1)}</td><td>${r.capE.toFixed(1)}</td><td>${r.capS.toFixed(1)}</td><td>${r.capM.toFixed(1)}</td>`,
+      `<td>${r.backlogE.toFixed(1)}</td><td>${r.backlogS.toFixed(1)}</td><td>${r.backlogM.toFixed(1)}</td>`,
+      `<td>${isFinite(r.waitE) ? r.waitE.toFixed(2) : '∞'}</td><td>${isFinite(r.waitS) ? r.waitS.toFixed(2) : '∞'}</td><td>${isFinite(r.waitM) ? r.waitM.toFixed(2) : '∞'}</td>`,
+      `<td>${r.effHeads.toFixed(2)}</td>`,
+    '</tr>');
+  });
+  tbl.push('</tbody></table>');
+  document.getElementById('results').innerHTML = tbl.join('');
+  document.getElementById('audit').innerHTML = auditLines.join('');
+  document.getElementById('btnDownload').disabled = false;
+  document.getElementById('btnDownloadTop').disabled = false;
+  document.getElementById('valStatus').className='pill ok';
+  document.getElementById('valStatus').textContent='Forecast ran';
+
+  // After running the forecast, re-run validation to update diagnostics with forecast statistics
+  validate();
+}
+
+function downloadCSV(){
+  if(!sim || !sim.length) return;
+  const headers=['Period','Requests_E','Requests_S','Requests_M','Cap_Total','Cap_E','Cap_S','Cap_M','Backlog_E','Backlog_S','Backlog_M','Wait_E_weeks','Wait_S_weeks','Wait_M_weeks','Eff_Heads'];
+  const lines=[headers.join(',')];
+  sim.forEach(r=> lines.push([r.period,r.reqE,r.reqS,r.reqM,r.capTotal,r.capE,r.capS,r.capM,r.backlogE,r.backlogS,r.backlogM,r.waitE,r.waitS,r.waitM,r.effHeads].join(',')));
+  const blob=new Blob([lines.join('\n')],{type:'text/csv'});
+  const url=URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download='wait_time_forecast.csv'; a.click(); URL.revokeObjectURL(url);
+}
+
+function validate(){
+  const issues=[];
+  if(!hist){ issues.push('History not built. Load CSV and apply mapping.'); }
+  else{
+    if(hist.capPerHead<=0) issues.push('Historical capacity per head computed as 0; check hearings and staffing columns.');
+    ['E','S','M'].forEach(k=>{
+      if(isNaN(hist.baseReq[k])) issues.push('Baseline requests have NaN.');
+    });
+  }
+  if(issues.length){
+    document.getElementById('valStatus').className='pill bad';
+    document.getElementById('valStatus').textContent='Validation failed';
+    warn(issues.join(' '));
+  }else{
+    document.getElementById('valStatus').className='pill ok';
+    document.getElementById('valStatus').textContent='Validation ok';
+    warn('');
+  }
+  if(hist){
+    let diagHtml = `<div class="kv">
+      <div>Last period</div><div>${hist.lastPeriod.y}-${String(hist.lastPeriod.m).padStart(2,'0')}</div>
+      <div>Learned capacity / head</div><div>${hist.capPerHead.toFixed(3)}</div>
+      <div>Last staff (FTE/PT/FTC/PTC)</div><div>${hist.lastStaff.FTE} / ${hist.lastStaff.PTE} / ${hist.lastStaff.FTC} / ${hist.lastStaff.PTC}</div>
+      <div>Baseline demand (E/S/M)</div><div>${hist.baseReq.E.toFixed(1)} / ${hist.baseReq.S.toFixed(1)} / ${hist.baseReq.M.toFixed(1)}</div>
+      <div>Priority allocation ratio (E/S/M)</div><div>${(hist.ratio.E*100).toFixed(1)}% / ${(hist.ratio.S*100).toFixed(1)}% / ${(hist.ratio.M*100).toFixed(1)}%</div>
+      <div>Backlog at t0 (E/S/M)</div><div>${hist.backlog.E.toFixed(1)} / ${hist.backlog.S.toFixed(1)} / ${hist.backlog.M.toFixed(1)}</div>
+      <div>Request ratio range (min-max)</div><div>
+        E: ${(hist.ratioRange.E.min*100).toFixed(1)}%-${(hist.ratioRange.E.max*100).toFixed(1)}% ,
+        S: ${(hist.ratioRange.S.min*100).toFixed(1)}%-${(hist.ratioRange.S.max*100).toFixed(1)}% ,
+        M: ${(hist.ratioRange.M.min*100).toFixed(1)}%-${(hist.ratioRange.M.max*100).toFixed(1)}%
+      </div>
+    </div>`;
+    // Append forecast accuracy information if forecast statistics are available
+    if(forecastStats){
+      diagHtml += `<div>Forecast wait range (E/S/M)</div><div>
+        ${forecastStats.E.min.toFixed(2)}-${forecastStats.E.max.toFixed(2)} / ${forecastStats.S.min.toFixed(2)}-${forecastStats.S.max.toFixed(2)} / ${forecastStats.M.min.toFixed(2)}-${forecastStats.M.max.toFixed(2)}
+      </div>`;
+    }
+    // Append model accuracy (mean absolute error) with color coding for each priority
+    if(hist && hist.errorStats){
+      const thrE = 0.6, thrS = 1.0, thrM = 2.0;
+      function fmt(val, thr){
+        if(isNaN(val)) return 'N/A';
+        const ok = val <= thr;
+        const col = ok ? '#39d353' : '#ff6b6b';
+        return `<span style="color:${col}">${val.toFixed(2)}</span>`;
+      }
+      diagHtml += `<div>Model MAE (E/S/M)</div><div>
+        ${fmt(hist.errorStats.E, thrE)} / ${fmt(hist.errorStats.S, thrS)} / ${fmt(hist.errorStats.M, thrM)}
+      </div>`;
+    }
+    diag(diagHtml);
+  }
+}
+
+// ===== Event wiring and view switching =====
+function showView(view){
+  document.getElementById('settingsView').style.display = (view==='settings')? 'block':'none';
+  document.getElementById('forecastView').style.display = (view==='forecast')? 'block':'none';
+  document.getElementById('infoView').style.display = (view==='information')? 'block':'none';
+}
+document.getElementById('btnSettingsTop').addEventListener('click', ()=>{
+  showView('settings');
+});
+document.getElementById('btnForecastTop').addEventListener('click', ()=>{
+  showView('forecast');
+});
+
+// Switch to Information view
+document.getElementById('btnInfoTop').addEventListener('click', ()=>{
+  showView('information');
+});
+
+// When a file is selected via the hidden input, automatically ingest it
+document.getElementById('file').addEventListener('change', () => {
+  ingestSelectedFile();
+});
+document.getElementById('btnApplyMap').addEventListener('click', ()=>{
+  applyMapFromForm();
+  {
+    const baselineVal = Math.max(1, Number(document.getElementById('inpBaseline').value) || 6);
+    const regVal = Number(document.getElementById('inpRegMonths') && document.getElementById('inpRegMonths').value) || null;
+    hist = buildHistory(RAW, baselineVal, regVal);
+  }
+    if(hist){
+      // Populate attrition inputs from computed attrRates after remapping but do not enable attrition by default
+      if(hist.attrRates){
+        const f = (v) => isFinite(v) ? (v * 100).toFixed(2) : '0';
+        document.getElementById('useAttr').checked = false;
+        document.getElementById('attrFTE').value = f(hist.attrRates.FTE);
+        document.getElementById('attrPTE').value = f(hist.attrRates.PTE);
+        document.getElementById('attrFTC').value = f(hist.attrRates.FTC);
+        document.getElementById('attrPTC').value = f(hist.attrRates.PTC);
+      }
+      // Populate priority range inputs from computed ratioRange and disable editing
+      if(hist.ratioRange){
+        const eMin = document.getElementById('rngEmin');
+        const eMax = document.getElementById('rngEmax');
+        const sMin = document.getElementById('rngSmin');
+        const sMax = document.getElementById('rngSmax');
+        const mMin = document.getElementById('rngMmin');
+        const mMax = document.getElementById('rngMmax');
+        eMin.value = (hist.ratioRange.E.min * 100).toFixed(1);
+        eMax.value = (hist.ratioRange.E.max * 100).toFixed(1);
+        sMin.value = (hist.ratioRange.S.min * 100).toFixed(1);
+        sMax.value = (hist.ratioRange.S.max * 100).toFixed(1);
+        mMin.value = (hist.ratioRange.M.min * 100).toFixed(1);
+        mMax.value = (hist.ratioRange.M.max * 100).toFixed(1);
+        [eMin,eMax,sMin,sMax,mMin,mMax].forEach(el => { if(el) el.disabled = true; });
+        const cr = document.getElementById('useCustomRange');
+        if(cr) cr.checked = false;
+      }
+      buildStaffingPlan(hist.lastPeriod.y, hist.lastPeriod.m);
+      validate();
+    }
+});
+document.getElementById('btnRunTop').addEventListener('click', () => {
+  // Always switch to forecast view when running the forecast
+  simulate();
+});
+document.getElementById('btnDownload').addEventListener('click', downloadCSV);
+document.getElementById('btnDownloadTop').addEventListener('click', downloadCSV);
+document.getElementById('btnValidate').addEventListener('click', validate);
+document.getElementById('btnLoadTop').addEventListener('click', ()=> document.getElementById('file').click());
+document.addEventListener('keydown', (e)=>{ if((e.ctrlKey||e.metaKey) && e.key==='Enter'){ if(!document.getElementById('btnRunTop').disabled) simulate(); } });
+
+// Attach listeners to priority allocation range inputs to re-run forecast on change
+['rngEmin','rngEmax','rngSmin','rngSmax','rngMmin','rngMmax'].forEach(id => {
+  const el = document.getElementById(id);
+  if(el){
+    el.addEventListener('input', () => {
+      // Re-run simulation in the current view (no navigation)
+      if(hist && hist.lastPeriod){
+        simulate();
+      }
+    });
+  }
+});
+
+// Toggle custom priority ranges: enable editing when checked, reset to defaults when unchecked
+const useRangeEl = document.getElementById('useCustomRange');
+if(useRangeEl){
+  useRangeEl.addEventListener('change', function(){
+    const enable = this.checked;
+    const ids = ['rngEmin','rngEmax','rngSmin','rngSmax','rngMmin','rngMmax'];
+    ids.forEach(id => {
+      const el = document.getElementById(id);
+      if(el){
+        el.disabled = !enable;
+        if(!enable && hist && hist.ratioRange){
+          if(id==='rngEmin') el.value = (hist.ratioRange.E.min * 100).toFixed(1);
+          if(id==='rngEmax') el.value = (hist.ratioRange.E.max * 100).toFixed(1);
+          if(id==='rngSmin') el.value = (hist.ratioRange.S.min * 100).toFixed(1);
+          if(id==='rngSmax') el.value = (hist.ratioRange.S.max * 100).toFixed(1);
+          if(id==='rngMmin') el.value = (hist.ratioRange.M.min * 100).toFixed(1);
+          if(id==='rngMmax') el.value = (hist.ratioRange.M.max * 100).toFixed(1);
+        }
+      }
+    });
+    if(hist && hist.lastPeriod){
+      simulate();
+    }
+  });
+}
+
+// Initially show forecast view by default
+showView('forecast');
+</script>
+</body>
+</html>
